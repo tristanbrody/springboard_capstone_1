@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+
+{% block title %}Testing API flows{% endblock %}
+
+{% block content %}
+
+<div class="container">
+
+    <ul>
+        {% for key, value in address_metadata.items() %}
+        <li>{{" ".join(key.split("_")).title()}}: {{" ".join(value.split("_")).title()}}</li>
+        {% endfor %}
+    </ul>
+</div>
+
+{% endblock %}
