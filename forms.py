@@ -31,15 +31,8 @@ class AddressForm(FlaskForm):
 class AddUserForm(FlaskForm):
     """Form for adding a new user"""
 
-    username = StringField(
-        "Username",
-        validators=[
-            InputRequired(),
-            Length(min=4, max=30, message="Must be between 4 and 30 characters"),
-        ],
-    )
-    password = PasswordField("Password", validators=[InputRequired()])
     email = EmailField("Email address", validators=[InputRequired()])
+    password = PasswordField("Password", validators=[InputRequired()])
     first_name = StringField("First name", validators=[InputRequired()])
     last_name = StringField("Last name", validators=[InputRequired()])
 

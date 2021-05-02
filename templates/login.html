@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% from 'macros.html' import nav_bar with context %}
+{% block title %}Login{% endblock %}
+
+{% block content %}
+{{nav_bar('login_form', '/login')}}
+<div class="container text-center">
+    <a type="button" class="text-center" style="display: inline-block;" href="/register">Sign Up Instead</a>
+</div>
+<form id="login-form" method="POST">
+    {% for flashed_message in get_flashed_messages()%}
+    {{flashed_message }}
+    {% endfor %}
+    {{ form.hidden_tag() }}
+    <div class="container">
+        <div class="form-row">
+            {% for field in form if field.widget.input_type != 'hidden' %}
+            <div class="col-md-6">
+                <div class="md-form form-group">
+                    {{field.label(class_="")}}
+                    {{field(class_="form-control")}}
+                </div>
+            </div>
+            {% for error in field.errors %}
+            {{ error }}
+            {% endfor %}
+            {% endfor %}
+            <div class="container">
+                <div class="text-right">
+                    <button type="submit" class="btn-lg btn-primary  ">Submit</button>
+                </div>
+            </div>
+</form>
+</div>
+</div>
+{% endblock %}

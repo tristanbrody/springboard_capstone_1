@@ -17,10 +17,9 @@ def connect_db(app):
 
 class User(db.Model, UserMixin):
     __tablename__ = "users"
-    user_id = db.Column(db.Integer, primary_key=True, unique=True, autoincrement=True)
-    username = db.Column(db.String(20), unique=True)
+    id = db.Column(db.Integer, primary_key=True, unique=True, autoincrement=True)
     password = db.Column(db.String(200), nullable=False)
-    email = db.Column(db.String(50), nullable=False)
+    email = db.Column(db.String(50), nullable=False, unique=True)
     first_name = db.Column(db.String(30), nullable=False)
     last_name = db.Column(db.String(30), nullable=False)
     is_admin = db.Column(db.Boolean, default=False)
@@ -28,16 +27,22 @@ class User(db.Model, UserMixin):
     last_searched_state = db.Column(db.String(2))
 
     @classmethod
-    def register(cls, username, password, email, first_name, last_name):
+    def register(cls, password, email, first_name, last_name):
         hashed_password = bcrypt.generate_password_hash(password)
         hashed_password_utf8 = hashed_password.decode("utf8")
         return cls(
-            username=username,
             password=hashed_password_utf8,
             email=email,
             first_name=first_name,
             last_name=last_name,
         )
+
+    @classmethod
+    def authenticate(cls, email, password):
+        user = User.query.filter_by(email=email).first()
+        if user and bcrypt.check_password_hash(user.password, password):
+            return user
+        return False
 
 
 class AddressSearch(db.Model):

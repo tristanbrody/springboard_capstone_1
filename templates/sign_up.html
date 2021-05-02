@@ -3,19 +3,21 @@
 {% block title %}Sign up!{% endblock %}
 
 {% block content %}
-<form id="add-user-form" method="POST">
-    {{ form.hidden_tag() }}
-    {% for field in form if field.widget.input_type != 'hidden' %}
-    <div class="">
-        {{field.label(class_="")}}
-        {{field(class_="")}}
-        {% for error in field.errors %}
-        {{ error }}
+<div class="container">
+    <form id="add-user-form" method="POST">
+        {{ form.hidden_tag() }}
+        {% for field in form if field.widget.input_type != 'hidden' %}
+        <div class="">
+            {{field.label(class_="")}}
+            {{field(class_="")}}
+            {% for error in field.errors %}
+            {{ error }}
+            {% endfor %}
+        </div>
         {% endfor %}
-    </div>
-    {% endfor %}
-    <button class="btn btn-danger">Cancel</button>
-    <button type="submit" class="btn btn-primary">Submit</button>
-</form>
-<h4>Already have an account? <a href="/login">Log in here</a></h4>
+        <button class="btn btn-danger">Cancel</button>
+        <button type="submit" class="btn btn-primary">Submit</button>
+    </form>
+    <h4<strong>Already have an account?</strong><a href="/login">Log in here</a></h4>
+</div>
 {% endblock %}

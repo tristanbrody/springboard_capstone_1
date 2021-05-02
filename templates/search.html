@@ -1,0 +1,139 @@
+{% extends 'base.html' %}
+{% from 'macros.html' import nav_bar with context %}
+
+{% block title %}Address Search{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="../static/styles.css">
+
+<body id="bootstrap-overrides">
+    <!-- can add form-control is-valid class on valid input -->
+    <div class="overlay hidden bootstrap-overrides">
+        <div class="overlay-child-container">
+            <h5 class="inside-overlay-header mb-3"><strong>Create an account to follow legislator activity</strong></h5>
+            <form method="POST" action="/newuser" class="form--inside-overlay">
+                <div class="form-group form--inside-overlay">
+                    <fieldset class="form--inside-overlay">
+                        <label class="control-label" for="firstName">First name</label>
+                        <input class="form-control" name="first_name" id="firstName" type="text" placeholder="Jane"
+                            required>
+                    </fieldset>
+                </div>
+
+                <div class="form-group form--inside-overlay">
+                    <fieldset class="form--inside-overlay">
+                        <label class="control-label" for="lastName">Last name</label>
+                        <input class="form-control" name="last_name" id="lastName" type="text" placeholder="Doe"
+                            required>
+                    </fieldset>
+                </div>
+
+                <div class="form-group form--inside-overlay">
+                    <fieldset class="form--inside-overlay">
+                        <label class="control-label" for="email">Email address</label>
+                        <input class="form-control" type="email" name="email" id="email" placeholder="jdoe@gmail.com"
+                            required>
+                    </fieldset>
+                </div>
+
+                <div class="form-group form--inside-overlay">
+                    <fieldset class="form--inside-overlay">
+                        <label class="control-label" for="password">Password</label>
+                        <input class="form-control" name="password" id="password" type="password"
+                            placeholder="At least 8 characters" required minlength="8">
+                    </fieldset>
+                </div>
+                <button type="submit" class="btn btn-lg btn-danger">No Thanks</button>
+                <button type="submit" class="btn btn-lg btn-primary float-right">Submit</button>
+                <p class="text-center mt-3"><strong>Already have an account?</strong><a href="/login"> Log in here</a>
+                </p>
+        </div>
+        </form>
+    </div>
+    </div>
+    {{nav_bar('search', '/search')}}
+    {% for flashed_message in get_flashed_messages()%}
+    {{flashed_message }}
+    {% endfor %}
+    <!-- //TODO see if I can get this to work  -->
+    <!-- <ul class="nav nav-pills">
+    <li class="nav-item">
+        <a class="nav-link active" href="#">Active</a>
+    </li>
+    <li class="nav-item dropdown">
+        <a class="nav-link dropdown-toggle" data-toggle="dropdown" href="#" role="button" aria-haspopup="true"
+            aria-expanded="false">Dropdown</a>
+        <div class="dropdown-menu">
+            <a class="dropdown-item" href="#">Action</a>
+            <a class="dropdown-item" href="#">Another action</a>
+            <a class="dropdown-item" href="#">Something else here</a>
+            <div class="dropdown-divider"></div>
+            <a class="dropdown-item" href="#">Separated link</a>
+        </div>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="#">Link</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link disabled" href="#">Disabled</a>
+    </li>
+</ul> -->
+
+    <div class="container">
+        <form action="" id="form-address-search">
+            {{ form.hidden_tag() }}
+            <div class="container">
+                <div class="row align-items-end">
+                    {% for field in form if field.widget.input_type != 'hidden'
+                    %}
+                    {%if field.label.text == 'Address'%}
+                    {% set columnsize = "col-md-4" %}
+                    {% elif field.label.text == 'Zip Code' %}
+                    {% set columnsize = "col-md-2" %}
+                    {% else %}
+                    {% set columnsize = "col-md-3" %}
+                    {% endif %}
+
+                    {% if field.label.text != 'State' %}
+                    <div class={{columnsize}}>
+                        <div class="form-group">
+                            {{field.label(class_="control-label")}}
+                            {{field(class_="form-control")}}
+                            {% for error in field.errors %}
+                            {{ error }}
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% if field.label.text == 'State'%}
+                    <div class="col-md-2">
+                        <div class="form-group">
+                            {{field.label(class_="control-label")}}
+                            {{form.state(list='id_datalist', class_="form-control")}}
+                            <datalist id="id_datalist">
+                                {% for entry in entries %}
+                                <option value="{{ entry[1] }}">{{entry[0]}}</option>
+                                {% endfor %}
+                            </datalist>
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                    <div class="col-md-1">
+                        <div class="form-group">
+                            <button class="btn btn-primary">Submit</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </form>
+        <div id="results-container">
+            <div id="results-ul">
+
+            </div>
+        </div>
+    </div>
+
+    <script src="../static/app.js"></script>
+
+</body>
+{% endblock %}

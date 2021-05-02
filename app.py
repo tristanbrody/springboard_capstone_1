@@ -18,7 +18,11 @@ from sqlalchemy import desc
 from wtforms_alchemy import ModelForm
 from forms import AddressForm, LoginForm, AddUserForm, STATE_TUPLES
 import requests
+
 import us
+
+# us package helps with state abbreviations and other fun stuff https://github.com/unitedstates/python-us
+
 import pdb
 import json
 from models import User, AddressSearch, db, connect_db
@@ -28,9 +32,11 @@ import datetime
 today = datetime.datetime.now()
 
 # TODO remove pdb when done with project
-# us package helps with state abbreviations and other fun stuff https://github.com/unitedstates/python-us
+
 
 # TODO refactor a lot of this code to make it more modular and easy to test
+
+# TODO add error handling
 
 # TODO improve FE display of search results. Maybe could use cards?
 
@@ -45,6 +51,8 @@ today = datetime.datetime.now()
 # TODO add endpoints/logic/FE for searching for committees related to a given candidate
 
 # TODO add endpoints/logic/FE for searching https://api.open.fec.gov/v1/schedules/schedule_e/by_candidate - this shows expenditures for ads for or against a candidate
+
+# TODO add ability to search directly by legislator name
 
 # TODO add loading bar
 
@@ -99,28 +107,45 @@ def load_user(userid):
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    if current_user.is_authenticated:
+        flash("You're already logged in")
+        return redirect("/search")
     form = LoginForm()
+    if form.validate_on_submit():
+        user = User.authenticate(form.username.data, form.password.data)
+        if not user:
+            flash("Incorrect username or password")
+            return redirect(f"/login")
+        login_user(user)
+        flash(f"Welcome back, {user.first_name}")
+        return redirect(url_for("search"))
+    return render_template("login.html", form=form)
 
 
-@app.route("/logout", methods=["POST"])
+@app.route("/logout")
+@login_required
 def logout():
     logout_user()
-    return redirect(url_for("root"))
+    flash("You've been logged out")
+    return redirect(url_for("search"))
 
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if current_user.is_authenticated:
-        return ""
+        flash("You're already logged in")
+        return redirect(url_for("search"))
     form = AddUserForm()
     if form.validate_on_submit():
-        username = form.username.data
+        user = User.query.filter_by(email=form.email.data).first()
+        if user:
+            flash("A user with that email address already exists", category="error")
+            return redirect("/register")
         password = form.password.data
         email = form.email.data
         first_name = form.first_name.data
         last_name = form.last_name.data
         new_user = User.register(
-            username=username,
             password=password,
             email=email,
             first_name=first_name,
@@ -129,8 +154,15 @@ def register():
         db.session.add(new_user)
         db.session.commit()
         login_user(new_user)
-        return redirect(url_for("root"))
+        flash(f"You've successfully registered!")
+        return redirect(url_for("search"))
     return render_template("sign_up.html", form=form)
+
+
+@app.route("/profile")
+@login_required
+def profile():
+    """Display account-specific info for logged-in user"""
 
 
 # just setting some example addresses here along with the congressional district they map to. Can move this to a testing file later TODO when I write tests, move this to test file
@@ -152,35 +184,36 @@ def root():
     """Root page - just for testing API communication for now"""
     # TODO clear this view function up once I'm done testing
 
-    response = requests.get(
-        f"{GOOGLE_CIVIC_INFORMATION_ROOT}/representatives",
-        params={
-            "key": GOOGLE_CIVIC_INFORMATION_KEY,
-            "address": "141 Roslyn Dr Concord CA 94518",
-        },
-    )
-    # we'll use address_metadata object to store data parsed from response
-    address_metadata = {}
-    # the 'divisions' object returned from Google Civic API contains a key that should look something like 'ocd-division/country:us/state:ca/cd:6'. To get the congressional district, we'll get the end of this key name. We'll also pull from other keys to get the county and school district
+    # response = requests.get(
+    #     f"{GOOGLE_CIVIC_INFORMATION_ROOT}/representatives",
+    #     params={
+    #         "key": GOOGLE_CIVIC_INFORMATION_KEY,
+    #         "address": "141 Roslyn Dr Concord CA 94518",
+    #     },
+    # )
+    # # we'll use address_metadata object to store data parsed from response
+    # address_metadata = {}
+    # # the 'divisions' object returned from Google Civic API contains a key that should look something like 'ocd-division/country:us/state:ca/cd:6'. To get the congressional district, we'll get the end of this key name. We'll also pull from other keys to get the county and school district
 
-    # convert json data into a list of just the keys from the divisions object
-    divisions_keys_string = list(response.json()["divisions"].keys())
-    for entry in ["congressional_district", "county", "school_district"]:
-        for key in divisions_keys_string:
-            # TODO is there a better way to get this than just looping through the list each time?
-            if address_metadata.get(entry, None) == None:
-                search = re.search(regex_dict[entry], key)
-            if search is not None:
-                result = get_data_from_regex_match(search, 1)
-                address_metadata[entry] = result
-    # there might be a limitation in the data returned from Google's API in terms of the local legislators. Could use getLegislators from OpenSecrets to get legislators for given congressional district
+    # # convert json data into a list of just the keys from the divisions object
+    # divisions_keys_string = list(response.json()["divisions"].keys())
+    # for entry in ["congressional_district", "county", "school_district"]:
+    #     for key in divisions_keys_string:
+    #         # TODO is there a better way to get this than just looping through the list each time?
+    #         if address_metadata.get(entry, None) == None:
+    #             search = re.search(regex_dict[entry], key)
+    #         if search is not None:
+    #             result = get_data_from_regex_match(search, 1)
+    #             address_metadata[entry] = result
 
-    return render_template("root.html", address_metadata=address_metadata)
+    # return render_template("root.html", address_metadata=address_metadata)
+
+    return redirect(url_for("search"))
 
 
 @app.route("/search")
 def search():
-    """Test searching for addresses"""
+    """Search for addresses"""
     # TODO remove this later/move functionality as needed
 
     form = AddressForm()
@@ -192,12 +225,42 @@ def search():
             ("Dakota", "DK"),
         ]:
             entries.append(tuple)
-    return render_template("home_unauthenticated.html", form=form, entries=entries)
+    return render_template("search.html", form=form, entries=entries)
 
 
 def get_data_from_regex_match(regex_match, group):
     """Given a regex match, return the specified group"""
     return regex_match.group(group) if regex_match is not None else None
+
+
+@app.route("/newuser", methods=["POST"])
+def create_new_user():
+    """Create new user in DB based on form data sent from JS"""
+    if current_user.is_authenticated:
+        flash("You're already logged in")
+        return redirect(url_for("search"))
+    email = request.form.get("email")
+    password = request.form.get("password")
+    first_name = request.form.get("first_name")
+    last_name = request.form.get("last_name")
+    new_user = User.register(
+        password=password,
+        email=email,
+        first_name=first_name,
+        last_name=last_name,
+    )
+    db.session.add(new_user)
+    db.session.commit()
+    login_user(new_user)
+    flash("Your account has successfully been created")
+    return redirect(url_for("search"))
+
+
+@app.route("/userstate")
+def get_user_state():
+    """Endpoint for JS to determine if user is currently logged in"""
+    pdb.set_trace()
+    return current_user.is_authenticated
 
 
 # routes for communication with external API. All the endpoints starting with api/ will only be called from JS
@@ -259,9 +322,13 @@ def financial_search():
     if response.json()["status"] == "ERROR":
         response = requests.get(
             f"{OPENFEC_ROOT}/candidate/{candidate_id}/history",
-            params={"api_key": OPENFEC_KEY, "cycle": cycle},
+            params={"api_key": OPENFEC_KEY},
         )
-
+        new_res = {"results": []}
+        for val in response.json()["results"]:
+            if val["two_year_period"] == cycle:
+                new_res["results"].append(val)
+        return new_res
     return response.json()
 
 
@@ -269,7 +336,7 @@ def financial_search():
 def address_search():
     """based on address sent from client-side form, send API request to Google Civic Info to get local legislative data"""
     if request.method == "GET":
-        return redirect(url_for("root"))
+        return redirect(url_for("search"))
 
     json_data = json.loads(request.data)
     form = AddressForm(obj=json_data)
