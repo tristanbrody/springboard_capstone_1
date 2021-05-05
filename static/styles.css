@@ -34,3 +34,7 @@ div.bootstrap-overrides {
 .hidden {
 	display: none !important;
 }
+
+.following {
+	background-color: green;
+}

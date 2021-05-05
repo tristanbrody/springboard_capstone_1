@@ -25,7 +25,14 @@ import us
 
 import pdb
 import json
-from models import User, AddressSearch, db, connect_db
+from models import (
+    User,
+    AddressSearch,
+    Representative,
+    UserRepresentative,
+    db,
+    connect_db,
+)
 
 import datetime
 
@@ -33,28 +40,33 @@ today = datetime.datetime.now()
 
 # TODO remove pdb when done with project
 
-
-# TODO refactor a lot of this code to make it more modular and easy to test
-
-# TODO add error handling
-
-# TODO improve FE display of search results. Maybe could use cards?
-
-# TODO add basic search filters
-
-# TODO map out what should be stored in local storage and what should be saved as JSON in DB
-
-# TODO start adding tests
+# - refactor event listener for card tab
 
 # TODO change functions that parse API data to only look at the specific fields that are actually interesting to display
 
+# TODO create endpoint that returns a CSRF token for use in JS forms
+
+
+# priority -
+
+# TODO add a profile page for logged-in user. Should show ppl the user follows & search history
+
 # TODO add endpoints/logic/FE for searching for committees related to a given candidate
+
+# TODO add account settings page for logged-in user. Should show ability to update password or delete account
+
+# TODO start refactoring
+
+# TODO add tests
+
+# TODO add error handling for API responses
+
+# TODO add loading bar
 
 # TODO add endpoints/logic/FE for searching https://api.open.fec.gov/v1/schedules/schedule_e/by_candidate - this shows expenditures for ads for or against a candidate
 
-# TODO add ability to search directly by legislator name
+# TODO add ability to search directly for legislator by name
 
-# TODO add loading bar
 
 from flask_login import (
     LoginManager,
@@ -64,8 +76,6 @@ from flask_login import (
     login_required,
     logout_user,
 )
-
-# TODO add flask-login
 
 login_manager = LoginManager()
 
@@ -225,7 +235,31 @@ def search():
             ("Dakota", "DK"),
         ]:
             entries.append(tuple)
+
     return render_template("search.html", form=form, entries=entries)
+
+
+@app.route("/following")
+def check_for_follows():
+    """After a logged-in user conducts a search, check if any of the results returned are already followed by them"""
+    all_follow_records = UserRepresentative.query.filter_by(
+        user_id=current_user.id
+    ).all()
+    if all_follow_records is not None:
+        following = []
+        for record in all_follow_records:
+            following.append(Representative.query.get(record.representative_id))
+        response = []
+        for rep in following:
+            response.append(
+                {
+                    "name": rep.name,
+                    "state": rep.state,
+                    "representative_id": record.representative_id,
+                }
+            )
+
+    return {"following": response}
 
 
 def get_data_from_regex_match(regex_match, group):
@@ -256,11 +290,63 @@ def create_new_user():
     return redirect(url_for("search"))
 
 
+@app.route("/update-search-history", methods=["POST"])
+def update_search_history():
+    """Called from JS to update search history for a logged-in user"""
+    json_data = json.loads(request.data)
+    address = f"{json_data['street']} {json_data['city']} {json_data['state']} {json_data['zip_code']}"
+    new_search_record = AddressSearch(user=current_user.id, search=address)
+    db.session.add(new_search_record)
+    db.session.commit()
+    return {"response": {"status": 200}}
+
+
 @app.route("/userstate")
 def get_user_state():
     """Endpoint for JS to determine if user is currently logged in"""
-    pdb.set_trace()
-    return current_user.is_authenticated
+    return {"response": {"logged-in": str(current_user.is_authenticated)}}
+
+
+@app.route("/follow-legislator", methods=["POST"])
+def follow_legislator():
+    """Endpoint called to add a new 'user_legislator' follow relationship"""
+    json_data = json.loads(request.data)
+    name = json_data["name"]
+    state = json_data["state"]
+    # check if legislator with this name and state combo is already in the DB
+    check = Representative.query.filter(
+        Representative.state == state, Representative.name == name
+    ).first()
+    if check == None:
+        new_legislator = Representative(name=name, state=state)
+        db.session.add(new_legislator)
+        db.session.commit()
+        new_legislator = Representative.query.order_by(-Representative.id).first()
+        new_follow_record = UserRepresentative(
+            representative_id=new_legislator.id, user_id=current_user.id
+        )
+        db.session.add(new_follow_record)
+        db.session.commit()
+        return {"response": "added"}
+    return {"response": "user already follows this legislator"}
+
+
+@app.route("/unfollow-legislator", methods=["POST"])
+def unfollow_legislator():
+    json_data = json.loads(request.data)
+    name = json_data["name"]
+    state = json_data["state"]
+    rep = Representative.query.filter(
+        Representative.state == state, Representative.name == name
+    ).first()
+    follow_record = UserRepresentative.query.filter(
+        UserRepresentative.user_id == current_user.id,
+        UserRepresentative.representative_id == rep.id,
+    ).first()
+    db.session.delete(rep)
+    db.session.delete(follow_record)
+    db.session.commit()
+    return {"response": "deleted"}
 
 
 # routes for communication with external API. All the endpoints starting with api/ will only be called from JS
@@ -400,8 +486,6 @@ def address_search():
         "legislators": legislators,
     }
 
-
-# TODO try using ProPublica's API if they send me back a key
 
 # potential API flows -
 
