@@ -45,6 +45,23 @@ class User(db.Model, UserMixin):
             return user
         return False
 
+    @classmethod
+    def change_password(cls, id, current_password, new_password):
+        """Change password for an existing user
+        Return false if current password passed into function is incorrect. Otherwise
+        return the user
+        """
+
+        user = cls.query.filter_by(id=id).first()
+        if user:
+            correct_password = bcrypt.check_password_hash(
+                user.password, current_password
+            )
+            if correct_password:
+                return user
+
+        return False
+
 
 class AddressSearch(db.Model):
     """Stores JSON search results from external APIs based on US address"""

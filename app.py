@@ -16,7 +16,7 @@ from flask import (
 from flask_debugtoolbar import DebugToolbarExtension
 from sqlalchemy import desc
 from wtforms_alchemy import ModelForm
-from forms import AddressForm, LoginForm, AddUserForm, STATE_TUPLES
+from forms import AddressForm, LoginForm, AddUserForm, ChangePasswordForm, STATE_TUPLES
 import requests
 
 import us
@@ -38,34 +38,26 @@ import datetime
 
 today = datetime.datetime.now()
 
-# TODO remove pdb when done with project
+# Thursday:
 
-# - refactor event listener for card tab
+# TODO add to profile page - clicking on previous searches should open a new tab with the results. Clicking on legislator should open a new tab to a page with just their info
 
-# TODO change functions that parse API data to only look at the specific fields that are actually interesting to display
-
-# TODO create endpoint that returns a CSRF token for use in JS forms
-
-
-# priority -
-
-# TODO add a profile page for logged-in user. Should show ppl the user follows & search history
-
-# TODO add endpoints/logic/FE for searching for committees related to a given candidate
+# TODO change functions that parse API data to only look at & rename the specific fields that are interesting to display
 
 # TODO add account settings page for logged-in user. Should show ability to update password or delete account
 
-# TODO start refactoring
+# TODO refactor as much as possible
+
+# TODO add basic exception handling for API responses
+
+# Friday -
 
 # TODO add tests
+# TODO deploy to Herokuapp
 
-# TODO add error handling for API responses
+# Saturday morning -
 
-# TODO add loading bar
-
-# TODO add endpoints/logic/FE for searching https://api.open.fec.gov/v1/schedules/schedule_e/by_candidate - this shows expenditures for ads for or against a candidate
-
-# TODO add ability to search directly for legislator by name
+# TODO complete markdown file to include in GitHub repo
 
 
 from flask_login import (
@@ -94,12 +86,27 @@ OPENFEC_KEY = os.environ.get("OPENFEC_KEY")
 
 GOOGLE_CIVIC_INFORMATION_ROOT = "https://www.googleapis.com/civicinfo/v2"
 GOOGLE_CIVIC_INFORMATION_KEY = os.environ.get("GOOGLE_CIVIC_INFORMATION_KEY")
+GOOGLE_CIVIC_DESIRED_KEYS = ["congressional_district", "county", "school_district"]
+GOOGLE_CIVIC_DESIRED_OFFICES = [
+    "Senator",
+    "Governor",
+    "Secretary of State",
+    "Attorney General",
+]
 
 OPEN_SECRETS_ROOT = "http://www.opensecrets.org/api"
 OPEN_SECRETS_KEY = os.environ.get("OPEN_SECRETS_KEY")
 
 PRO_PUBLICA_ROOT = "https://api.propublica.org/campaign-finance/v1"
 PRO_PUBLICA_KEY = os.environ.get("PRO_PUBLICA_KEY")
+
+# store regex we'll need here, in case it needs to be duplicated
+regex_dict = {
+    "congressional_district": "cd:(\d+$)",
+    "county": "county:(\w*)/?:?$",
+    "school_district": "school_district:(.*)",
+}
+
 
 connect_db(app)
 
@@ -174,6 +181,12 @@ def register():
 def profile():
     """Display account-specific info for logged-in user"""
 
+    # want to get search history and followed legislators from DB
+    followed = get_followed_representatives(current_user.id)
+    searches = get_search_history(current_user.id)
+
+    return render_template("profile.html", followed=followed, searches=searches)
+
 
 # just setting some example addresses here along with the congressional district they map to. Can move this to a testing file later TODO when I write tests, move this to test file
 example_addresses = {
@@ -181,50 +194,15 @@ example_addresses = {
     "california_11": "141 Roslyn Drive, Concord CA 94518",
 }
 
-# store regex we'll need here, in case it needs to be duplicated
-regex_dict = {
-    "congressional_district": "cd:(\d+$)",
-    "county": "county:(\w*)/?:?$",
-    "school_district": "school_district:(.*)",
-}
-
 
 @app.route("/")
 def root():
-    """Root page - just for testing API communication for now"""
-    # TODO clear this view function up once I'm done testing
-
-    # response = requests.get(
-    #     f"{GOOGLE_CIVIC_INFORMATION_ROOT}/representatives",
-    #     params={
-    #         "key": GOOGLE_CIVIC_INFORMATION_KEY,
-    #         "address": "141 Roslyn Dr Concord CA 94518",
-    #     },
-    # )
-    # # we'll use address_metadata object to store data parsed from response
-    # address_metadata = {}
-    # # the 'divisions' object returned from Google Civic API contains a key that should look something like 'ocd-division/country:us/state:ca/cd:6'. To get the congressional district, we'll get the end of this key name. We'll also pull from other keys to get the county and school district
-
-    # # convert json data into a list of just the keys from the divisions object
-    # divisions_keys_string = list(response.json()["divisions"].keys())
-    # for entry in ["congressional_district", "county", "school_district"]:
-    #     for key in divisions_keys_string:
-    #         # TODO is there a better way to get this than just looping through the list each time?
-    #         if address_metadata.get(entry, None) == None:
-    #             search = re.search(regex_dict[entry], key)
-    #         if search is not None:
-    #             result = get_data_from_regex_match(search, 1)
-    #             address_metadata[entry] = result
-
-    # return render_template("root.html", address_metadata=address_metadata)
-
     return redirect(url_for("search"))
 
 
 @app.route("/search")
 def search():
     """Search for addresses"""
-    # TODO remove this later/move functionality as needed
 
     form = AddressForm()
     entries = []
@@ -239,27 +217,45 @@ def search():
     return render_template("search.html", form=form, entries=entries)
 
 
+@app.route("/account", methods=["GET", "POST"])
+def account_settings():
+    """Allows for basic changes to account settings"""
+    form = ChangePasswordForm()
+
+    if form.validate_on_submit():
+        change_password_attempt = User.change_password(
+            id=current_user.id,
+            current_password=form.current_password.data,
+            new_password=form.new_password.data,
+        )
+        if change_password_attempt == current_user:
+            db.session.commit()
+            flash("Your password has been updated")
+        else:
+            flash("Current password is incorrect")
+    return render_template("account.html", form=form)
+
+
+# @app.route("/users/delete", methods=["POST"])
+# @login_required
+# def delete_user():
+#     """Delete user."""
+#     user = current_user
+#     logout_user()
+#     db.session.delete(user)
+#     db.session.commit()
+#     flash("Your account has successfully been deleted")
+
+#     return redirect("/register")
+
+
 @app.route("/following")
 def check_for_follows():
     """After a logged-in user conducts a search, check if any of the results returned are already followed by them"""
-    all_follow_records = UserRepresentative.query.filter_by(
-        user_id=current_user.id
-    ).all()
-    if all_follow_records is not None:
-        following = []
-        for record in all_follow_records:
-            following.append(Representative.query.get(record.representative_id))
-        response = []
-        for rep in following:
-            response.append(
-                {
-                    "name": rep.name,
-                    "state": rep.state,
-                    "representative_id": record.representative_id,
-                }
-            )
-
-    return {"following": response}
+    if current_user.is_authenticated:
+        response = get_followed_representatives(current_user.id)
+        return {"following": response}
+    return {"following": "not logged in"}
 
 
 def get_data_from_regex_match(regex_match, group):
@@ -314,21 +310,20 @@ def follow_legislator():
     name = json_data["name"]
     state = json_data["state"]
     # check if legislator with this name and state combo is already in the DB
-    check = Representative.query.filter(
+    new_legislator = Representative.query.filter(
         Representative.state == state, Representative.name == name
     ).first()
-    if check == None:
+    if new_legislator == None:
         new_legislator = Representative(name=name, state=state)
         db.session.add(new_legislator)
         db.session.commit()
         new_legislator = Representative.query.order_by(-Representative.id).first()
-        new_follow_record = UserRepresentative(
-            representative_id=new_legislator.id, user_id=current_user.id
-        )
-        db.session.add(new_follow_record)
-        db.session.commit()
-        return {"response": "added"}
-    return {"response": "user already follows this legislator"}
+    new_follow_record = UserRepresentative(
+        representative_id=new_legislator.id, user_id=current_user.id
+    )
+    db.session.add(new_follow_record)
+    db.session.commit()
+    return {"response": "added"}
 
 
 @app.route("/unfollow-legislator", methods=["POST"])
@@ -362,10 +357,7 @@ def legislator_search():
     legislator = json_data["legislator"]
     state = json_data["state"]
 
-    response = requests.get(
-        f"{OPENFEC_ROOT}/candidates",
-        params={"api_key": OPENFEC_KEY, "q": legislator},
-    )
+    response = call_open_fec("candidates", {"api_key": OPENFEC_KEY, "q": legislator})
 
     return response.json()
 
@@ -379,16 +371,7 @@ def legislators_search():
     json_data = json.loads(request.data)
     state = json_data["state"].upper()
 
-    response = requests.get(
-        f"{OPEN_SECRETS_ROOT}/",
-        params={
-            "method": "getLegislators",
-            "apikey": OPEN_SECRETS_KEY,
-            "id": state,
-            "output": "json",
-        },
-    )
-    return response.json()
+    return call_open_secrets("getLegislators", state)
 
 
 @app.route("/api/legislator/financial", methods=["POST"])
@@ -400,21 +383,31 @@ def financial_search():
     candidate_id = json_data["candidate_id"]
     if int(cycle) > today.year:
         cycle = int(cycle) - 2
-    response = requests.get(
-        f"{PRO_PUBLICA_ROOT}/{cycle}/candidates/{candidate_id}.json",
-        headers={"X-API-Key": PRO_PUBLICA_KEY},
-    )
+
+    response = call_pro_publica(f"{cycle}/candidates/{candidate_id}")
     # if candidate not found from ProPublica, try searching OpenFEC's API
     if response.json()["status"] == "ERROR":
-        response = requests.get(
-            f"{OPENFEC_ROOT}/candidate/{candidate_id}/history",
-            params={"api_key": OPENFEC_KEY},
+        response = call_open_fec(
+            f"candidate/{candidate_id}/history", {"api_key": OPENFEC_KEY}
         )
         new_res = {"results": []}
         for val in response.json()["results"]:
             if val["two_year_period"] == cycle:
                 new_res["results"].append(val)
         return new_res
+    return response.json()
+
+
+@app.route("/api/legislator/expenditures", methods=["POST"])
+def expenditure_search():
+    """get data from OpenFEC API for a specific candidate's independent expenditures"""
+
+    json_data = json.loads(request.data)
+    candidate_id = json_data["candidate_id"]
+    response = call_open_fec(
+        f"schedules/schedule_e/by_candidate",
+        {"api_key": OPENFEC_KEY, "candidate_id": candidate_id},
+    )
     return response.json()
 
 
@@ -434,35 +427,20 @@ def address_search():
             form.state.data.upper(),
             form.zip_code.data,
         )
-        response = requests.get(
-            f"{GOOGLE_CIVIC_INFORMATION_ROOT}/representatives",
-            params={
-                "key": GOOGLE_CIVIC_INFORMATION_KEY,
-                "address": address,
-            },
-        )
-        # we'll use address_metadata object and legislators list to store data parsed from response
-    address_metadata = {}
-    legislators = []
-    # the 'divisions' object returned from Google Civic API contains a key that should look something like 'ocd-division/country:us/state:ca/cd:6'. To get the congressional district, we'll get the end of this key name. We'll also pull from other keys to get the county and school district
+        response = call_google_civic("representatives", address)
 
-    # convert json data into a list of just the keys from the divisions object
-    divisions_keys_string = list(response.json()["divisions"].keys())
-    for entry in ["congressional_district", "county", "school_district"]:
-        for key in divisions_keys_string:
-            # TODO is there a better way to get this than just looping through the list each time?
-            if address_metadata.get(entry, None) == None:
-                search = re.search(regex_dict[entry], key)
-            if search is not None:
-                result = get_data_from_regex_match(search, 1)
-                address_metadata[entry] = result
+    # we'll use address_metadata object and legislators list to store data parsed from response
+    # the 'divisions' object returned from Google Civic API contains a key that should look something like 'ocd-division/country:us/state:ca/cd:6'. To get the congressional district, we'll get the end of this key name. We'll also pull from other keys to get the county and school district
+    address_metadata = get_keys_from_JSON(
+        response.json(), "divisions", GOOGLE_CIVIC_DESIRED_KEYS
+    )
+    legislators = []
 
     # retrieve data on a few key legislative positions returned by Google's API
-    positions = ["Senator", "Governor", "Secretary of State", "Attorney General"]
     for i, (office, official) in enumerate(
         zip(response.json()["offices"], response.json()["officials"])
     ):
-        if any(position in office["name"] for position in positions):
+        if any(position in office["name"] for position in GOOGLE_CIVIC_DESIRED_OFFICES):
             for val in office["officialIndices"]:
                 legislators.append(
                     {
@@ -471,15 +449,6 @@ def address_search():
                     }
                 )
 
-    # TODO add separate endpoint for adding JSON API results to my DB
-    # json_record = AddressSearch(
-    #     data={
-    #         "address_metadata": address_metadata,
-    #         "address": {"fullAddress": address, "state": form.state.data},
-    #     }
-    # )
-    # db.session.add(json_record)
-    # db.session.commit()
     return {
         "address_metadata": address_metadata,
         "address": {"fullAddress": address, "state": form.state.data},
@@ -487,41 +456,91 @@ def address_search():
     }
 
 
-# potential API flows -
-
-# TODO get these API flows to work (listed in order of priority)
-# FLOW 1: basic search based on US address
-# 1) user enters their address
-# 2) API call to https://www.googleapis.com/civicinfo/v2/representatives maps address to congressional district
-# info on /representatives endpoint from Google:
-# A resource in this collection has three sections, described in detail below. The divisions section lists political geographic divisions, like a country, state, county, or legislative district. (Which divisions will be listed depends on the specific API request made.) The offices section lists political positions that are elected to represent the divisions in the first section. The officials section lists people presently serving in the offices listed.
-
-# 3) search results displayed based on data from 2 - should show congressional district for address entered, and current legislators for that area in house and senate
-
-# FLOW 2: click into a specific result from 1 and get financial info about candidate
-
-# 1) user clicks on a specific candidate returned from flow 1
-# 2) then, we have options in terms of how we'll get the data we want. To get basic info, we could use a combo of the getLegislators and candSummary endpoints from opensecrets (this would be kind of annoying because it'd first require looking up the result from flow 1.2 on getLegislators, then using the unique ID returned by opensecrets to pull from the candSummary endpoint)
-
-# because of the API call restrictions on OpenSecrets, probably is better to use some combo of OpenFEC and ProPublica's APIs in order to get financial data. But on OpenSecrets, candContrib and candIndustry might be cool if I can work around the metering
-
-# on OpenFEC, would first need to take the district/state/legislator name from 1.2 and search in candidates/search/ . If found, grab the unique FEC candidate id and use it to hit other OpenFEC endpoints.
-
-# FLOW 3: add option to 'drill down' for more details on candidate's history
-
-# 1) after 2.2, display another link to see details about candidate's history.
-#
-# 2) make call to /candidate/{candidate_id}/history/ endpoint on OpenFEC
-
-# subcategory of flows based on filtering search results
-
-# FLOW 4: FILTER FOR ELECTIONS based on congressional district returned from 1
-# 1) use /elections/search/ endpoint on OpenFEC
-
-# FLOW 5:
-
-
 def normalize_address(street, city, state, zip_code):
     # TODO add more logic to this function
     """Accepts and formats address data from HTML form"""
     return f"{street}, {city} {state} {zip_code}"
+
+
+def get_followed_representatives(user_id):
+    """Returns a list of objects with name, state and representative id of each followed representative for logged-in user"""
+    all_follow_records = UserRepresentative.query.filter_by(user_id=user_id).all()
+    if all_follow_records is not None:
+        following = []
+        for record in all_follow_records:
+            following.append(Representative.query.get(record.representative_id))
+        response = []
+        for rep in following:
+            response.append(
+                {
+                    "name": rep.name,
+                    "state": rep.state.upper(),
+                    "representative_id": record.representative_id,
+                }
+            )
+        return response
+    return None
+
+
+def get_search_history(user_id):
+    """Returns a list of objects with search history from DB"""
+    all_search_history = AddressSearch.query.filter_by(user=user_id).all()
+    searches = []
+    for search in all_search_history:
+        searches.append({"search": search.search, "date": search.timestamp})
+    if len(searches) > 0:
+        return searches
+    return None
+
+
+def call_open_fec(endpoint, params):
+    return requests.get(
+        f"{OPENFEC_ROOT}/{endpoint}",
+        params=params,
+    )
+
+
+def call_open_secrets(method, state=None):
+    """Make call to Open Secrets API with arguments provided"""
+    response = requests.get(
+        f"{OPEN_SECRETS_ROOT}/",
+        params={
+            "method": method,
+            "apikey": OPEN_SECRETS_KEY,
+            "id": state,
+            "output": "json",
+        },
+    )
+    return response.json()
+
+
+def call_google_civic(endpoint, address):
+    """Make call to Google Civic API with arguments provided"""
+    return requests.get(
+        f"{GOOGLE_CIVIC_INFORMATION_ROOT}/{endpoint}",
+        params={
+            "key": GOOGLE_CIVIC_INFORMATION_KEY,
+            "address": address,
+        },
+    )
+
+
+def call_pro_publica(endpoint):
+    return requests.get(
+        f"{PRO_PUBLICA_ROOT}/{endpoint}.json",
+        headers={"X-API-Key": PRO_PUBLICA_KEY},
+    )
+
+
+def get_keys_from_JSON(JSON, object, desired_keys):
+    """Convert json data into a list of just the keys from the specified object - object arg should be a string"""
+    key_list = list(JSON[object].keys())
+    new_obj = {}
+    for entry in desired_keys:
+        for key in key_list:
+            if new_obj.get(entry, None) == None:
+                search = re.search(regex_dict[entry], key)
+            if search is not None:
+                result = get_data_from_regex_match(search, 1)
+                new_obj[entry] = result
+    return new_obj

@@ -1,20 +1,47 @@
 const addressForm = document.querySelector('#form-address-search');
 
+const dataPoints = ['Overview', 'Financial Data', 'Expenditures'];
+
+const today = new Date();
+
+const openFECFinancialDataPoints = [
+	'begin_cash',
+	'first_file_date',
+	'candidate_loans',
+	'data_coverage_from',
+	'data_coverage_to',
+	'party_full',
+	'debts_owed',
+	'end_cash',
+	'fec_uri',
+	'independent_expenditures',
+	'other_cycles',
+	'total_contributions',
+	'total_disbursements',
+	'total_from_individuals',
+	'total_from_pacs',
+	'total_receipts',
+	'url'
+];
+
 addEventListener(document.querySelector('.overlay'), 'toggleOverlay', 'click');
 addressForm.addEventListener('submit', submitAddressForm);
 
-//determine if user is logged in based on response from our server
+//event listener for logout button so we can clear local storage
+
+//determine if user is logged in based on response from our server, and re-add event listeners to DOM accordingly
 (async function () {
+	let checkLocalStorage = getMostRecentSearch();
+	document.querySelector('#results-ul').innerHTML = checkLocalStorage;
 	const loggedIn = await getCurrentUserState();
 	localStorage.setItem('logged-in', loggedIn['response']['logged-in']);
-})();
-
-let checkLocalStorage = getMostRecentSearch();
-if (checkLocalStorage !== null) {
-	document.querySelector('#results-ul').innerHTML = checkLocalStorage;
 	reAddEventListeners();
 	reAddEventListenersToFollowLegislatorButtons();
-}
+	if (loggedIn === 'True') {
+		addEventListener(document.querySelector('.button--logout', 'logout', 'click'));
+		reAddFollowedRelationships();
+	}
+})();
 
 async function submitAddressForm(e) {
 	e.preventDefault();
@@ -24,18 +51,8 @@ async function submitAddressForm(e) {
 	const formData = Object.fromEntries(data.entries());
 	delete formData.crsf_token;
 
-	let followedByUser;
-	let followedByUserArray = [];
-	let loggedIn = localStorage.getItem('logged-in');
 	//need to get all legislators the user is following, assuming they're logged in
-	if (loggedIn === 'True') {
-		followedByUser = await fetch('/following', {
-			method: 'get'
-		}).then(response => response.json());
-	}
-	for (let rep of followedByUser['following']) {
-		followedByUserArray.push(`${rep.name}-${rep.state.toUpperCase()}`);
-	}
+	const followedByUserArray = await getFollowedLegislators(localStorage.getItem('logged-in'));
 
 	//need to include csrf-token here so we can use WTForm validate_on_submit method (https://stackoverflow.com/questions/58369348/flask-csrf-and-fetch-api)
 	// this API call will return metadata about address (including congressional district), the address searched, and key legislative positions relevant to that address
@@ -74,18 +91,18 @@ async function submitAddressForm(e) {
 			phone,
 			website
 		} = open_secrets_resp.response.legislator[x]['@attributes'];
-		const filteredResponse = { ...open_secrets_resp.response.legislator[x]['@attributes'] };
-		//loop through response and delete the properties we don't need
-		for (let key in filteredResponse) {
-			if (['firstlast', 'feccandid', 'party', 'office', 'phone', 'website'].includes(key) === false) {
-				delete filteredResponse[key];
-			}
-		}
-		let h4 = document.createElement('h4');
-		h4.innerText = `District Representative | ${name}`;
 
-		// let ul = document.createElement('ul');
-		// let div = document.createElement('div');
+		const filteredResponse = filterAPIResponse({ ...open_secrets_resp.response.legislator[x]['@attributes'] }, [
+			'firstlast',
+			'feccandid',
+			'party',
+			'office',
+			'phone',
+			'website'
+		]);
+
+		let h4 = setCardTitle('District Representative', name);
+
 		if (office === `${google_resp['address']['state'].toUpperCase()}${congressionalDistrict}`) {
 			let newElements = addSearchResultsToDOM(filteredResponse, name, google_resp['address']['state']);
 			let following = false;
@@ -102,14 +119,9 @@ async function submitAddressForm(e) {
 	//also want to display legislator data from Google's API
 
 	for (let legislator of google_resp['legislators']) {
-		let h4 = document.createElement('h4');
-		h4.innerText = `${legislator['office']} | ${legislator['data']['name']}`;
-		const filteredResponse = { ...legislator['data'] };
-		for (let key in filteredResponse) {
-			if (key === 'address' || key === 'channels') {
-				delete filteredResponse[key];
-			}
-		}
+		let h4 = setCardTitle(legislator['office'], legislator['data']['name']);
+		const filteredResponse = filterAPIResponse({ ...legislator['data'] }, ['address', 'channels'], true);
+
 		let newElements = addSearchResultsToDOM(
 			filteredResponse,
 			legislator['data']['name'],
@@ -132,24 +144,12 @@ async function submitAddressForm(e) {
 	cacheMostRecentSearch(document.querySelector('#results-ul').innerHTML);
 
 	//send search query to our endpoint to save to DB
-	if (loggedIn === 'True') {
+	if (localStorage.getItem('logged-in') === 'True') {
 		fetch('/update-search-history', {
 			method: 'post',
 			body: JSON.stringify(formData)
 		});
 	}
-}
-
-function title(phrase) {
-	//remove underscores and capitalize results from API
-	return phrase
-		.split('_')
-		.map(word => word.charAt(0).toUpperCase() + word.slice(1))
-		.join(' ');
-}
-
-function clearPreviousSearch() {
-	document.querySelector('#results-ul').innerHTML = '';
 }
 
 async function getLegislatorFECId(legislator, state) {
@@ -163,7 +163,6 @@ async function getLegislatorFECId(legislator, state) {
 	try {
 		FECId = res.results[0]['candidate_id'];
 		//cycle will be last element in cycles array
-		//TODO this could return a date in the future. Might want logic that looks at most recent election cycle that's already passed?
 		cycle = res.results[0]['cycles'].pop();
 	} catch {
 		FECId = 'Not Found';
@@ -183,6 +182,18 @@ async function getLegislatorFinancialData(candidate_id, cycle) {
 	//parse res to get financial data
 	let financialData = res.results;
 	return financialData;
+}
+
+async function getLegislatorExpenditureData(candidate_id) {
+	//provided a unique FEC candidate id, call our endpoint to look them up on Open FEC's API & get data on expenditures
+
+	const res = await fetch('/api/legislator/expenditures', {
+		method: 'post',
+		body: JSON.stringify({ candidate_id })
+	}).then(response => response.json());
+	//parse res to get financial data
+	let expenditureData = res.results;
+	return expenditureData;
 }
 
 function toggleArrowElement(el) {
@@ -212,76 +223,27 @@ function addFinancialDataForLegislatorToDOM(financialData, target) {
 	target.append(ul);
 }
 
-function addTopDataForLegislatorToDom(legislatorData, target) {
-	//given an object with data about a legislator, and a target, add specific info from the data to DOM
-	const cardDiv = document.createElement('div');
-	cardDiv.classList.add('card', 'text-left', 'mt-2', 'mb-2');
-	const nestedDiv = document.createElement('div');
-	nestedDiv.classList.add('card-header');
-	cardDiv.append(nestedDiv);
-	const nestedUl = document.createElement('ul');
-	nestedUl.classList.add('nav', 'nav-tabs', 'card-header-tabs');
-	nestedDiv.append(nestedUl);
-	for (let liText of ['Overview', 'Financial Data', 'Committees']) {
-		const liNavItem = document.createElement('li');
-		liNavItem.classList.add('nav-item');
-		nestedUl.append(liNavItem);
-		const anchor = document.createElement('a');
-		if (liText === 'Overview') {
-			anchor.dataset.section = 'overview';
+function addExpenditureDataForLegislatorToDOM(financialData, target) {
+	let parentDiv = document.createElement('div');
+	// try {
+	if (financialData.length > 0) {
+		for (let _ of financialData) {
+			let div = document.createElement('div');
+			let ul = document.createElement('ul');
+			for (const [key, value] of Object.entries(_)) {
+				let li = document.createElement('li');
+				li.innerText = `${title(key)}: ${value}`;
+				ul.append(li);
+			}
+			div.append(ul);
+			parentDiv.append(div);
 		}
-		if (liText === 'Financial Data') {
-			anchor.dataset.section = 'financial';
-		}
-		if (liText === 'Committees') {
-			anchor.dataset.section = 'committees';
-		}
-		anchor.classList.add('nav-link');
-		anchor.innerText = liText;
-		anchor.href = 'javascript:void(0)';
-		anchor.dataset.legislator = legislatorData['legislator']['name'];
-		anchor.dataset.state = legislatorData['state'];
-		anchor.dataset.financial_section = 'True';
-		anchor.dataset.key = `${legislatorData['legislator']['name']}-${anchor.dataset.section}-anchor`;
-		anchor.dataset.clicked = 'false';
-		addEventListener(anchor, 'changeLegislatorCardTab', 'click');
-		if (liText === 'Overview') {
-			anchor.classList.add('active');
-			localStorage.setItem(`${state}-${legislator}-active-item`, 'overview');
-		}
-		liNavItem.append(anchor);
+	} else {
+		let p = document.createElement('p');
+		p.innerText = 'No expenditure data found for last 4 years';
+		parentDiv.append(p);
 	}
-
-	let div = document.createElement('div');
-	let ul = document.createElement('ul');
-	ul.classList.add('card-overview-ul');
-	ul.dataset.key = `${legislatorData['legislator']['name']}-overview-ul`;
-	const ulFinancialData = document.createElement('ul');
-	ulFinancialData.classList.add('card-financial-ul', 'hidden');
-	const ulCommitteesData = document.createElement('ul');
-	ulCommitteesData.classList.add('card-committees-ul', 'hidden');
-	for (const [key, value] of Object.entries(legislatorData['legislator'])) {
-		let li = document.createElement('li');
-		li.innerText = `${title(key)}: ${value}`;
-		ul.append(li);
-	}
-	ulFinancialData.dataset.key = `${legislatorData['legislator']['name']}-financial-ul`;
-	ulFinancialData.dataset.legislator = legislatorData['legislator']['name'];
-	ulFinancialData.dataset.state = legislatorData['state'];
-	ulFinancialData.dataset.financial_section = 'True';
-	ulFinancialData.dataset.section = 'financial';
-	ulCommitteesData.dataset.legislator = legislatorData['legislator']['name'];
-	ulCommitteesData.dataset.key = `${legislatorData['legislator']['name']}-committees-ul`;
-	ulCommitteesData.dataset.state = legislatorData['state'];
-	ulCommitteesData.dataset.committees_section = 'True';
-	ulCommitteesData.dataset.section = 'committees';
-	ul.insertAdjacentElement('afterend', ulFinancialData);
-	ul.insertAdjacentElement('afterend', ulCommitteesData);
-	div.append(ul);
-	cardDiv.append(div);
-	target.append(cardDiv);
-	target.insertAdjacentElement('afterend', ul);
-	cacheMostRecentSearch(document.querySelector('#results-ul').innerHTML);
+	target.append(parentDiv);
 }
 
 function addFollowButtonToDOM(name, state, target, following = false) {
@@ -316,7 +278,7 @@ function getMostRecentSearch() {
 }
 
 function addSearchResultsToDOM(response, name = 'not passed in', state = 'not passed in') {
-	//function takes in object that only has specific properties we want to display for a given API response, and, optionally, separate variables for name and state of legislator
+	//function takes in object that only has specific properties we want to display for a given API response, and, optionally, separate variables for name and state of legislator. Returns DOM elements needed to display this info
 	const cardDiv = document.createElement('div');
 	cardDiv.classList.add('card', 'text-left', 'mt-2', 'mb-2');
 	const nestedDiv = document.createElement('div');
@@ -325,7 +287,7 @@ function addSearchResultsToDOM(response, name = 'not passed in', state = 'not pa
 	const nestedUl = document.createElement('ul');
 	nestedUl.classList.add('nav', 'nav-tabs', 'card-header-tabs');
 	nestedDiv.append(nestedUl);
-	for (let liText of ['Overview', 'Financial Data', 'Committees']) {
+	for (let liText of dataPoints) {
 		const liNavItem = document.createElement('li');
 		liNavItem.classList.add('nav-item');
 		nestedUl.append(liNavItem);
@@ -337,13 +299,17 @@ function addSearchResultsToDOM(response, name = 'not passed in', state = 'not pa
 		anchor.dataset.state = state;
 		if (liText === 'Overview') {
 			anchor.dataset.section = 'overview';
-			localStorage.setItem(`${state}-${name}-active-item`, 'overview');
+			anchor.dataset.linkedUl = 'overviewUl';
+			localStorage.setItem(`${state}-${name}-active-item-ul`, 'overviewUl');
+			localStorage.setItem(`${state}-${name}-active-item-anchor`, 'overviewAnchor');
 		}
 		if (liText === 'Financial Data') {
 			anchor.dataset.section = 'financial';
+			anchor.dataset.linkedUl = 'financialUl';
 		}
-		if (liText === 'Committees') {
-			anchor.dataset.section = 'committees';
+		if (liText === 'Expenditures') {
+			anchor.dataset.section = 'expenditures';
+			anchor.dataset.linkedUl = 'expendituresUl';
 		}
 		anchor.dataset.financial_section = 'True';
 		anchor.dataset.clicked = 'false';
@@ -360,11 +326,11 @@ function addSearchResultsToDOM(response, name = 'not passed in', state = 'not pa
 	ul.dataset.key = `${name}-overview-ul`;
 	ul.dataset.legislator = name;
 	ul.dataset.state = state;
-	ul.dataset.committees_section = 'True';
+	ul.dataset.expenditures_section = 'True';
 	const ulFinancialData = document.createElement('ul');
 	ulFinancialData.classList.add('card-financial-ul', 'hidden');
-	const ulCommitteesData = document.createElement('ul');
-	ulCommitteesData.classList.add('card-committees-ul', 'hidden');
+	const ulExpendituresData = document.createElement('ul');
+	ulExpendituresData.classList.add('card-expenditures-ul', 'hidden');
 	let div = document.createElement('div');
 	div.classList.add('card-body');
 	for (const [key, value] of Object.entries(response)) {
@@ -394,13 +360,13 @@ function addSearchResultsToDOM(response, name = 'not passed in', state = 'not pa
 	ulFinancialData.dataset.state = state;
 	ulFinancialData.dataset.financial_section = 'True';
 	ulFinancialData.dataset.section = 'financial';
-	ulCommitteesData.dataset.legislator = name;
-	ulCommitteesData.dataset.key = `${name}-committees-ul`;
-	ulCommitteesData.dataset.state = state;
-	ulCommitteesData.dataset.committees_section = 'True';
-	ulCommitteesData.dataset.section = 'committees';
+	ulExpendituresData.dataset.legislator = name;
+	ulExpendituresData.dataset.key = `${name}-expenditures-ul`;
+	ulExpendituresData.dataset.state = state;
+	ulExpendituresData.dataset.expenditures_section = 'True';
+	ulExpendituresData.dataset.section = 'expenditures';
 	ul.insertAdjacentElement('afterend', ulFinancialData);
-	ul.insertAdjacentElement('afterend', ulCommitteesData);
+	ul.insertAdjacentElement('afterend', ulExpendituresData);
 	//return i and cardDiv to append to DOM
 	return { cardDiv, i };
 }
@@ -417,7 +383,6 @@ function addEventListener(element, name, type) {
 				let localStorageData = JSON.parse(localStorage.getItem(element.dataset.legislator));
 				let el = document.querySelector(`[data-legislator=${CSS.escape(element.dataset.legislator)}-div]`);
 				el.classList.remove('hidden');
-				// addTopDataForLegislatorToDom(localStorageData, element);
 			} else {
 				let el = document.querySelector(`[data-legislator=${CSS.escape(element.dataset.legislator)}-div]`);
 				el.classList.add('hidden');
@@ -428,134 +393,51 @@ function addEventListener(element, name, type) {
 			let legislator = e.target.dataset.legislator;
 			let state = e.target.dataset.state;
 			let section = e.target.dataset.section;
-			let activeAnchor = localStorage.getItem(`${state}-${legislator}-active-item`);
-			if (e.target === activeAnchor) {
+			let activeAnchorUl = localStorage.getItem(`${state}-${legislator}-active-item-ul`);
+			let activeAnchor = localStorage.getItem(`${state}-${legislator}-active-item-anchor`);
+			if (e.target.dataset.linkedUl === activeAnchorUl) {
 				return false;
 			} else {
-				// let activeAnchor = localStorage.getItem(`${state}-${legislator}-active-item`);
+				// let activeAnchor = localStorage.getItem(`${state}-${legislator}-active-item-ul`);
 				let overviewUl = document.querySelector(`[data-key=${CSS.escape(legislator)}-overview-ul]`);
 				let financialUl = document.querySelector(`[data-key=${CSS.escape(legislator)}-financial-ul]`);
-				let committeesUl = document.querySelector(`[data-key=${CSS.escape(legislator)}-committees-ul]`);
-				if (activeAnchor === 'overview') {
-					overviewUl.classList.toggle('hidden');
-				}
-				if (activeAnchor === 'financial') {
-					financialUl.classList.toggle('hidden');
-				}
-				if (activeAnchor === 'committees') {
-					committeesUl.classList.toggle('hidden');
-				}
+				let expendituresUl = document.querySelector(`[data-key=${CSS.escape(legislator)}-expenditures-ul]`);
+				eval(activeAnchorUl).classList.toggle('hidden');
 
-				// financialUl.classList.toggle('hidden');
-				// committeesUl.classList.toggle('hidden');
 				let overviewAnchor = document.querySelector(`[data-key=${CSS.escape(legislator)}-overview-anchor]`);
 				let financialAnchor = document.querySelector(`[data-key=${CSS.escape(legislator)}-financial-anchor]`);
-				let committeesAnchor = document.querySelector(`[data-key=${CSS.escape(legislator)}-committees-anchor]`);
-				if (activeAnchor === 'overview') {
-					overviewAnchor.classList.toggle('active');
-				}
-				if (activeAnchor === 'financial') {
-					financialAnchor.classList.toggle('active');
-				}
-				if (activeAnchor === 'committees') {
-					committeesAnchor.classList.toggle('active');
-				}
+				let expendituresAnchor = document.querySelector(
+					`[data-key=${CSS.escape(legislator)}-expenditures-anchor]`
+				);
+				eval(activeAnchor).classList.toggle('active');
 				e.target.classList.toggle('active');
 
-				localStorage.setItem(`${state}-${legislator}-active-item`, e.target.dataset.section);
-				// e.target.classList.toggle('card-tab-toggle');
-				//clicked data attribute is set to True if user has already clicked on this - this is to prevent duplicate API calls
-				if (e.target.dataset.clicked === 'true' || section === 'overview') {
-					//retrieve data from local storage, since search for financial data was already completed
-					//if arrow clicked has 'down' class list, data needs to be re-added to DOM
-					if (e.target.classList.contains('card-tab-toggle' && section === 'financial')) {
-						const retrievedFinancialData = JSON.parse(
-							window.localStorage.getItem(`${state}-${legislator}-${section}`)
-						);
-						if (section === 'financial') {
-							// addFinancialDataForLegislatorToDOM(retrievedFinancialData, e.target);
-						}
-						if (section === 'committees') {
-							console.log('need to create this function');
-						}
-						// overviewUl.classList.toggle('hidden');
-						// financialUl.classList.toggle('hidden');
-						// committeesUl.classList.toggle('hidden');
+				localStorage.setItem(`${state}-${legislator}-active-item-ul`, `${e.target.dataset.section}Ul`);
+				localStorage.setItem(`${state}-${legislator}-active-item-anchor`, `${e.target.dataset.section}Anchor`);
 
-						cacheMostRecentSearch(document.querySelector('#results-ul').innerHTML);
-					}
-					//otherwise data should be removed from DOM
-					else {
-						// overviewUl.classList.toggle('hidden');
-						// financialUl.classList.toggle('hidden');
-						// committeesUl.classList.toggle('hidden');
-
-						cacheMostRecentSearch(document.querySelector('#results-ul').innerHTML);
-					}
-				}
-				if ((e.target.dataset.section === 'financial') & (e.target.dataset.clicked === 'false')) {
-					const legislatorData = await getLegislatorFECId(legislator, state);
-					const data = await getLegislatorFinancialData(
-						legislatorData['candidate_id'],
-						legislatorData['cycle']
-					);
-					const financialDataObj = data[0];
-					//loop through response and delete the properties we don't need
-					for (let key in financialDataObj) {
-						if (
-							[
-								'begin_cash',
-								'first_file_date',
-								'candidate_loans',
-								'data_coverage_from',
-								'data_coverage_to',
-								'party_full',
-								'debts_owed',
-								'end_cash',
-								'fec_uri',
-								'independent_expenditures',
-								'other_cycles',
-								'total_contributions',
-								'total_disbursements',
-								'total_from_individuals',
-								'total_from_pacs',
-								'total_receipts',
-								'url'
-							].includes(key) === false
-						) {
-							delete financialDataObj[key];
-						}
-					}
-					let target;
-					if (section === 'overview') {
-						target = overviewUl;
-					}
-					if (section === 'financial') {
-						target = financialUl;
-					}
-					if (section === 'committees') {
-						target = committeesUl;
-					}
-					// overviewUl.classList.toggle('hidden');
-					// financialUl.classList.toggle('hidden');
-					// committeesUl.classList.toggle('hidden');
+				if (e.target.dataset.section === 'financial' && e.target.dataset.clicked === 'false') {
+					const financialDataObj = await getDataForFinancialTab(legislator, state);
 					e.target.dataset.clicked = 'true';
 					e.target.legislator = legislator;
-					addFinancialDataForLegislatorToDOM([financialDataObj], target);
+					addFinancialDataForLegislatorToDOM([financialDataObj], eval(e.target.dataset.linkedUl));
 
 					//add financial data to local storage so it can be hidden/re-displayed
 					//local storage will use a key of state-legislator-financial
 					localStorage.setItem(`${state}-${legislator}-${section}`, JSON.stringify(financialDataObj));
 				}
-				if (e.target.dataset.section === 'overview') {
-					overviewUl.classList.toggle('hidden');
+
+				if (e.target.dataset.section === 'expenditures' && e.target.dataset.clicked === 'false') {
+					//TODO create these functions
+					const expenditureDataObj = await getDataForExpendituresTab(legislator, state);
+					e.target.dataset.clicked = 'true';
+					e.target.legislator = legislator;
+					addExpenditureDataForLegislatorToDOM(expenditureDataObj, eval(e.target.dataset.linkedUl));
+					// add expenditure data to local storage so it can be hidden/re-displayed
+					// local storage will use a key of state-legislator-expenditure
+					localStorage.setItem(`${state}-${legislator}-${section}`, JSON.stringify(expenditureDataObj));
 				}
-				if (e.target.dataset.section === 'financial') {
-					financialUl.classList.toggle('hidden');
-				}
-				if (e.target.dataset.section === 'committees') {
-					committeesUl.classList.toggle('hidden');
-				}
+
+				eval(e.target.dataset.linkedUl).classList.toggle('hidden');
 				cacheMostRecentSearch(document.querySelector('#results-ul').innerHTML);
 			}
 		},
@@ -597,6 +479,13 @@ function addEventListener(element, name, type) {
 				e.target.innerText = 'following';
 			}
 			cacheMostRecentSearch(document.querySelector('#results-ul').innerHTML);
+		},
+		logout: async function (e) {
+			localStorage.clear();
+			setTimeout(function () {
+				// fetch('/logout', { method: 'get' });
+				fetch('/logout', { method: 'get' });
+			}, 3000);
 		}
 	};
 	element.addEventListener(type, eventListeners[name]);
@@ -609,6 +498,9 @@ function reAddEventListeners() {
 		if (el.href === 'javascript:void(0)') {
 			addEventListener(el, 'changeLegislatorCardTab', 'click');
 		}
+	}
+	for (let el of Array.from(document.querySelectorAll('i'))) {
+		addEventListener(el, 'toggle-arrow-top', 'click');
 	}
 }
 
@@ -624,6 +516,18 @@ function reAddEventListenersToFollowLegislatorButtons() {
 	}
 }
 
+async function reAddFollowedRelationships() {
+	//if page is refreshed, check that follows displayed in search results are still accurate
+	const followedByUserArray = getFollowedLegislators(localStorage.getItem('logged-in'));
+	for (let el of Array.from(document.querySelectorAll('button.button--follow-legislator'))) {
+		if (followedByUserArray.includes(`${el.dataset.name}-${el.dataset.state.toUpperCase()}`)) {
+			el.innerText = 'following';
+			el.classList.add('following');
+			el.dataset.following = 'True';
+		}
+	}
+}
+
 async function getCurrentUserState() {
 	//call our endpoint to get server-side data re if user is currently logged in - response object has string "True" or "False"
 	return await fetch('/userstate', {
@@ -631,59 +535,61 @@ async function getCurrentUserState() {
 	}).then(response => response.json());
 }
 
-{
-	/* <div class="card text-center">
-  <div class="card-header">
-    <ul class="nav nav-tabs card-header-tabs">
-      <li class="nav-item">
-        <a class="nav-link active" href="#">Active</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link" href="#">Link</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link disabled" href="#">Disabled</a>
-      </li>
-    </ul>
-  </div>
-  <div class="card-body">
-    <h5 class="card-title">Special title treatment</h5>
-    <p class="card-text">With supporting text below as a natural lead-in to additional content.</p>
-    <a href="#" class="btn btn-primary">Go somewhere</a>
-  </div>
-</div> */
+async function getFollowedLegislators(loggedIn) {
+	const followedByUserArray = [];
+	if (loggedIn === 'True') {
+		const followedByUser = await fetch('/following', {
+			method: 'get'
+		}).then(response => response.json());
+		for (let rep of followedByUser['following']) {
+			followedByUserArray.push(`${rep.name}-${rep.state.toUpperCase()}`);
+		}
+	}
+	return followedByUserArray;
 }
 
-// const cardDiv = document.createElement('div');
-// cardDiv.classList.add('card', 'text-center');
-// cardDiv.innerHTML += `<div class="card-header">
-// <ul class="nav nav-tabs card-header-tabs">
-//   <li class="nav-item">
-// 	<a class="nav-link active" href="#">Overview</a>
-//   </li>
-//   <li class="nav-item">
-// 	<a class="nav-link" href="#">Financial Data</a>
-//   </li>
-//   <li class="nav-item">
-// 	<a class="nav-link" href="#">Committees</a>
-//   </li>
-// </ul>`;
+function setCardTitle(office, name) {
+	let h4 = document.createElement('h4');
+	h4.innerText = `${office} | ${name}`;
+	return h4;
+}
 
-// addEventListener('cardDiv', 'handleCardDivClick', 'click');
+function filterAPIResponse(object, propertiesToKeep, flip = false) {
+	//accepts an object returned from API and an array of properties to keep. Deletes all other properties in object and returns updated object. Optional argument will 'flip' logic and keep everything except the elements in array
+	for (let key in object) {
+		if (propertiesToKeep.includes(key) === (flip ? true : false)) {
+			delete object[key];
+		}
+	}
+	return object;
+}
 
-// const nestedDiv = document.createElement('div');
-// nestedDiv.classList.add('card-header');
-// cardDiv.append(nestedDiv);
-// const nestedUl = document.createElement('ul');
-// nestedUl.classList.add('nav', 'nav-tabs', 'card-header-tabs');
-// nestedDiv.append(nestedUl);
-// for (let liText of ['Overview', 'Financial Data', 'Overview']) {
-// 	const liNavItem = document.createElement('li');
-// 	li.classList.add('nav-item');
-// 	const anchor = document.createElement('a');
-// 	anchor.classList.add('nav-link');
-// 	anchor.innerText = liText;
-// 	if (liText === 'Overview') {
-// 		anchor.classList.add('active');
-// 	}
-// }
+function title(phrase) {
+	//remove underscores and capitalize results from API
+	return phrase
+		.split('_')
+		.map(word => word.charAt(0).toUpperCase() + word.slice(1))
+		.join(' ');
+}
+
+function clearPreviousSearch() {
+	document.querySelector('#results-ul').innerHTML = '';
+}
+
+async function getDataForFinancialTab(legislator, state) {
+	//accepts legislator and state and returns data for 'financial' tab on search results (pulled from OpenFEC API)
+	const legislatorData = await getLegislatorFECId(legislator, state);
+	const data = await getLegislatorFinancialData(legislatorData['candidate_id'], legislatorData['cycle']);
+	//loop through response and delete the properties we don't need
+	return filterAPIResponse(data[0], openFECFinancialDataPoints);
+}
+
+async function getDataForExpendituresTab(legislator, state) {
+	//accepts legislator and state and returns data for 'expenditures' tab on search results (pulled from OpenFEC API)
+	const legislatorData = await getLegislatorFECId(legislator, state);
+	const data = await getLegislatorExpenditureData(legislatorData['candidate_id']);
+	const filtered = filterAPIResponse(data, ['Count', 'Total'], true);
+
+	//filter the results to cycles within the last 4 years
+	return filtered.filter(obj => obj['cycle'] >= today.getFullYear() - 4);
+}

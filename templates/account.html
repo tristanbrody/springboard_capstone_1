@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+
+{% from 'macros.html' import nav_bar with context %}
+
+{%block title %}Account Settings{% endblock %}
+
+{% block content %}
+{{nav_bar('account', '/account')}}
+{% for flashed_message in get_flashed_messages()%}
+{{flashed_message }}
+{% endfor %}
+<form id="login-form" method="POST">
+    {{ form.hidden_tag() }}
+
+    <div class="container">
+        <h5>Update your password</h5>
+        <div class="form-group">
+            {% for field in form if field.widget.input_type != 'hidden' %}
+            <div class="col-md-6">
+                <div class="md-form form-group">
+                    {{field.label(class_="")}}
+                    {{field(class_="form-control")}}
+                </div>
+            </div>
+            {% for error in field.errors %}
+            {{ error }}
+            {% endfor %}
+            {% endfor %}
+            <div>
+                <button type="submit" class="btn btn-success mb-5">Confirm change</button>
+            </div>
+        </div>
+    </div>
+</form>
+
+<!-- <div class="container">
+    <form action="/users/delete" class="" method="POST">
+        <button class="btn btn-danger">Delete Account</button>
+    </form>
+</div> -->
+{% endblock %}

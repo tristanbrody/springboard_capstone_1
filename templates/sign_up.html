@@ -1,23 +1,30 @@
 {% extends 'base.html'%}
+{% from 'macros.html' import nav_bar with context %}
 
 {% block title %}Sign up!{% endblock %}
 
 {% block content %}
+{{ nav_bar('search', '/search')}}
 <div class="container">
-    <form id="add-user-form" method="POST">
+    <form class="mb-3" id="add-user-form" method="POST">
         {{ form.hidden_tag() }}
-        {% for field in form if field.widget.input_type != 'hidden' %}
-        <div class="">
-            {{field.label(class_="")}}
-            {{field(class_="")}}
+        <div class="form-row">
+            {% for field in form if field.widget.input_type != 'hidden' %}
+            <div class="col-md-8">
+                <div class="md-form form-group">
+                    {{field.label(class_="")}}
+                    {{field(class_="form-control")}}
+                </div>
+            </div>
             {% for error in field.errors %}
             {{ error }}
             {% endfor %}
-        </div>
-        {% endfor %}
-        <button class="btn btn-danger">Cancel</button>
-        <button type="submit" class="btn btn-primary">Submit</button>
+            {% endfor %}
+            <div class="container mb-3">
+                <a href="/search" class="btn btn-danger">Cancel</a>
+                <button type="submit" class="btn btn-primary ml-3">Submit</button>
+            </div>
     </form>
-    <h4<strong>Already have an account?</strong><a href="/login">Log in here</a></h4>
+    <h4<strong>Already have an account? </strong><a href="/login">Log in here</a></h4>
 </div>
 {% endblock %}

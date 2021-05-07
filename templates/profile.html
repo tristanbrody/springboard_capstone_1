@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% from 'macros.html' import nav_bar with context %}
+
+{% block title %}My Profile{% endblock %}
+
+{% block content %}
+{{nav_bar('profile', '/profile')}}
+<div class="container">
+    <h5 class="mb-3">Following:</h5>
+    {% for follow in followed %}
+    <div>
+        <p class="mb-1"><strong>Legislator: </strong>{{follow.name}}</p>
+        <p><strong>State: </strong>{{follow.state}}
+        <p data-name={{follow.name}} data-state={{follow.state}} id={{follow.legislator_id}}><a href="">See current
+                data</a></p>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="container">
+    <h5 class="mb-3">Search History:</h5>
+    {% if searches != None %}
+    {% for search in searches %}
+    <div>
+        <strong>{{search.date}}: </strong><a class="search-history-anchor" href="#">{{search.search}}</a>
+
+    </div>
+    {% endfor %}
+    {% else %}
+    <p>No searches yet. Go <a href="/search">here</a> to make one.</p>
+    {% endif %}
+</div>
+{% endblock %}

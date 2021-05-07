@@ -9,7 +9,15 @@ from wtforms import (
     SelectField,
 )
 from wtforms.fields.html5 import EmailField
-from wtforms.validators import InputRequired, Regexp, URL, NumberRange, Optional, Length
+from wtforms.validators import (
+    InputRequired,
+    Regexp,
+    URL,
+    NumberRange,
+    Optional,
+    Length,
+    DataRequired,
+)
 import us
 
 # create a list of tuples in format ('California', 'CA') to use for select field
@@ -40,3 +48,31 @@ class AddUserForm(FlaskForm):
 class LoginForm(FlaskForm):
     username = StringField("Username", validators=[InputRequired()])
     password = PasswordField("Password", validators=[InputRequired()])
+
+
+class ChangePasswordForm(FlaskForm):
+
+    current_password = PasswordField("Current password", validators=[DataRequired()])
+    new_password = PasswordField("New password", validators=[Length(min=6)])
+    confirm_new_password = PasswordField(
+        "Confirm new password", validators=[Length(min=6)]
+    )
+
+    # extend validate function to cross-validate 'confirm password' field
+    def validate(self):
+        if not super().validate():
+            return False
+        result = True
+        seen = set()
+        for field in [self.new_password, self.confirm_new_password]:
+            if self.new_password.data != self.confirm_new_password.data:
+                field.errors.append("New password and confirmation do not match.")
+                result = False
+            elif self.new_password.data == self.current_password.data:
+                field.errors.append(
+                    "New password must be different from current password"
+                )
+                result = False
+            else:
+                seen.add(field.data)
+        return result
