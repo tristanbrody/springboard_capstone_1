@@ -23,6 +23,8 @@ All data presented in the application is pulled from free APIs that provide acce
 
 ### Technologies used
 
+- - -
+
 * Flask
 * Python
 * SQLAlchemy
