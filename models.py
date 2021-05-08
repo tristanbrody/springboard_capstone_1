@@ -19,7 +19,7 @@ def connect_db(app):
 class User(db.Model, UserMixin):
     __tablename__ = "users"
     id = db.Column(db.Integer, primary_key=True, unique=True, autoincrement=True)
-    password = db.Column(db.String(30), nullable=False)
+    password = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(60), nullable=False, unique=True)
     first_name = db.Column(db.String(30), nullable=False)
     last_name = db.Column(db.String(30), nullable=False)
@@ -76,7 +76,6 @@ class AddressSearch(db.Model):
     user = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
 
 
-# TODO keep working on the models below -
 class UserRepresentative(db.Model):
     """Join table to store representatives a user is 'following'"""
 

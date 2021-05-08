@@ -188,17 +188,15 @@ def profile():
     """Display account-specific info for logged-in user"""
 
     # want to get search history and followed legislators from DB
-    followed = get_followed_representatives(current_user.id)
-    searches = get_search_history(current_user.id)
+    followed = get_followed_representatives(
+        current_user.id,
+        UserRepresentative.query.filter_by(user_id=current_user.id).all(),
+    )
+    searches = get_search_history(
+        current_user.id, AddressSearch.query.filter_by(user=user_id).all()
+    )
 
     return render_template("profile.html", followed=followed, searches=searches)
-
-
-# just setting some example addresses here along with the congressional district they map to. Can move this to a testing file later TODO when I write tests, move this to test file
-example_addresses = {
-    "california_6": "5320 Ygnacio Dr Sacramento, California",
-    "california_11": "141 Roslyn Drive, Concord CA 94518",
-}
 
 
 @app.route("/")
@@ -259,14 +257,12 @@ def account_settings():
 def check_for_follows():
     """After a logged-in user conducts a search, check if any of the results returned are already followed by them"""
     if current_user.is_authenticated:
-        response = get_followed_representatives(current_user.id)
+        response = get_followed_representatives(
+            current_user.id,
+            UserRepresentative.query.filter_by(user_id=current_user.id).all(),
+        )
         return {"following": response}
     return {"following": "not logged in"}
-
-
-def get_data_from_regex_match(regex_match, group):
-    """Given a regex match, return the specified group"""
-    return regex_match.group(group) if regex_match is not None else None
 
 
 @app.route("/newuser", methods=["POST"])
@@ -468,9 +464,8 @@ def normalize_address(street, city, state, zip_code):
     return f"{street}, {city} {state} {zip_code}"
 
 
-def get_followed_representatives(user_id):
+def get_followed_representatives(user_id, all_follow_records):
     """Returns a list of objects with name, state and representative id of each followed representative for logged-in user"""
-    all_follow_records = UserRepresentative.query.filter_by(user_id=user_id).all()
     if all_follow_records is not None:
         following = []
         for record in all_follow_records:
@@ -488,15 +483,10 @@ def get_followed_representatives(user_id):
     return None
 
 
-def get_search_history(user_id):
+def get_search_history(user_id, all_search_history):
     """Returns a list of objects with search history from DB"""
-    all_search_history = AddressSearch.query.filter_by(user=user_id).all()
-    searches = []
-    for search in all_search_history:
-        searches.append({"search": search.search, "date": search.timestamp})
-    if len(searches) > 0:
-        return searches
-    return None
+    searches = [({"search": s.search, "date": s.timestamp}) for s in all_search_history]
+    return searches if len(searches) > 0 else None
 
 
 def call_open_fec(endpoint, params):
@@ -550,3 +540,8 @@ def get_keys_from_JSON(JSON, object, desired_keys):
                 result = get_data_from_regex_match(search, 1)
                 new_obj[entry] = result
     return new_obj
+
+
+def get_data_from_regex_match(regex_match, group):
+    """Given a regex match, return the specified group"""
+    return regex_match.group(group) if regex_match is not None else None
