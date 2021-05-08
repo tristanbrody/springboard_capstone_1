@@ -38,24 +38,12 @@ import datetime
 
 today = datetime.datetime.now()
 
-# Thursday:
 
 # TODO add to profile page - clicking on previous searches should open a new tab with the results. Clicking on legislator should open a new tab to a page with just their info
 
 # TODO change functions that parse API data to only look at & rename the specific fields that are interesting to display
 
-# TODO add account settings page for logged-in user. Should show ability to update password or delete account
-
-# TODO refactor as much as possible
-
 # TODO add basic exception handling for API responses
-
-# Friday -
-
-# TODO add tests
-# TODO deploy to Herokuapp
-
-# Saturday morning -
 
 # TODO complete markdown file to include in GitHub repo
 
