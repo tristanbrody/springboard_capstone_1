@@ -193,7 +193,7 @@ def profile():
         UserRepresentative.query.filter_by(user_id=current_user.id).all(),
     )
     searches = get_search_history(
-        current_user.id, AddressSearch.query.filter_by(user=user_id).all()
+        current_user.id, AddressSearch.query.filter_by(user=current_user.id).all()
     )
 
     return render_template("profile.html", followed=followed, searches=searches)
