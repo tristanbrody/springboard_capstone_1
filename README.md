@@ -4,7 +4,9 @@
 This mini-project is my first 'Capstone' for [Springboard's](https://www.springboard.com) software engineering bootcamp.
 
 The application allows you to search an address in the United States to see a list of local legislators for your given state and congressional district. For each legislator, you
-see relevant public information about campaign finances and expenditures for their most recent election cycle(s). 
+see relevant public information about campaign finances and expenditures for their most recent election cycle(s).  
+  
+Additionally, users who register for an account can 'follow' specific legislators and save their search history.
 
 ### Data Sources
 
