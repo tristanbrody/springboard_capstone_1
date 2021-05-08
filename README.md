@@ -27,4 +27,5 @@ All data presented in the application is pulled from free APIs that provide acce
 * Python
 * SQLAlchemy
 * JavaScript
+* Jasmine
 * Deployed on Heroku [here)[https://fun-with-the-fec.herokuapp.com/search] using gunicorn
