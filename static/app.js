@@ -1,5 +1,3 @@
-/*
-COMMENTED OUT TO AVOID BREAKING JASMINE TESTS 
 const addressForm = document.querySelector('#form-address-search');
 
 const dataPoints = ['Overview', 'Financial Data', 'Expenditures'];
@@ -44,7 +42,6 @@ addressForm.addEventListener('submit', submitAddressForm);
 		reAddFollowedRelationships();
 	}
 })();
-*/
 async function submitAddressForm(e) {
 	e.preventDefault();
 	clearPreviousSearch();
